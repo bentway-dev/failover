@@ -46,7 +46,7 @@ describe('cost correctness across a mixed-target session', () => {
     const expectedTotal = expectedT1Cost + expectedT2Cost;
 
     const total = composite.computeTotalCostUsd('claude-opus-4-8', { input_tokens: 3000, output_tokens: 150 });
-    expect(total).toBeCloseTo(expectedTotal, 10);
+    expect(total).toBe(expectedTotal);
 
     const routes = rec.metricsOf('route_usage');
     expect(routes).toHaveLength(2);
