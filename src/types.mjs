@@ -94,6 +94,16 @@
  * @callback EmitFn
  * @param {object} event
  * @returns {void}
+ *
+ * Receiver for the per-call telemetry events the composite produces on
+ * the happy path (`route_usage` per successful call) and at teardown
+ * (`failover_summary`). Routed to a separate hook from `EmitFn` so per-
+ * call telemetry never lands on the conversation stream. Structurally
+ * identical to `EmitFn`; the type alias is the contract.
+ *
+ * @callback MetricsFn
+ * @param {object} event
+ * @returns {void}
  */
 
 export {};

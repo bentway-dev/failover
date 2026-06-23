@@ -28,6 +28,7 @@ export { failoverProvider, defaultClassify } from './failover.mjs';
  * @typedef {import('./types.mjs').CompleteFn} CompleteFn
  * @typedef {import('./types.mjs').ComputeCostUsdFn} ComputeCostUsdFn
  * @typedef {import('./types.mjs').EmitFn} EmitFn
+ * @typedef {import('./types.mjs').MetricsFn} MetricsFn
  * @typedef {import('./types.mjs').CompletionRequest} CompletionRequest
  */
 

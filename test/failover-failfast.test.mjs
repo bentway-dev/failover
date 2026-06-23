@@ -34,7 +34,7 @@ describe('fail-fast: 4xx non-retryable', () => {
     expect(t2.calls.serializeRequest).toHaveLength(0);
     expect(t2.calls.complete).toHaveLength(0);
 
-    expect(rec.customEventsBySubtype('failover_decision')).toHaveLength(0);
-    expect(rec.customEventsBySubtype('route_usage')).toHaveLength(0);
+    expect(rec.emitOf('failover_decision')).toHaveLength(0);
+    expect(rec.metricsOf('route_usage')).toHaveLength(0);
   });
 });

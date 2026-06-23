@@ -38,8 +38,9 @@ export function defaultClassify(error: NeutralError_4): Action_3;
 export type EmitFn = EmitFn_2;
 
 // @public (undocumented)
-export function failoverProvider(targets: Target_3[], policy: ((error: NeutralError_3, target: Target_3, history: object[]) => (Action_2 | null | undefined)) | undefined, hooks: {
-    emit: EmitFn_3;
+export function failoverProvider(targets: Target_3[], policy: ((error: NeutralError_3, target: Target_3, history: object[]) => (Action_2 | null | undefined)) | undefined, hooks?: {
+    emit?: EmitFn_3;
+    metrics?: MetricsFn_3;
     now?: () => number;
     sleep?: (ms: number) => Promise<void>;
 }): {
@@ -55,6 +56,9 @@ export function failoverProvider(targets: Target_3[], policy: ((error: NeutralEr
 
 // @public
 export type Message = Message_2;
+
+// @public
+export type MetricsFn = MetricsFn_2;
 
 // @public
 export type NeutralError = NeutralError_2;

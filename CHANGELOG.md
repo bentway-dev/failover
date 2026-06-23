@@ -2,6 +2,46 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-06-23
+
+Consumer-driven refinement surfaced by the first downstream adoption
+review. Two substantive changes and three doc-folds; no behavior change
+on the happy path.
+
+### Changed
+
+- **Two-channel event routing.** `failoverProvider(targets, policy, hooks)`
+  now distinguishes a stream sink from a telemetry hook:
+  - `hooks.emit` receives ONLY decision events
+    (`failover_decision`, `failover_degradation`). Both only fire when
+    something actually happens — a failover, or a cross-provider trim.
+    **The happy path — first target succeeds, no degradation — emits
+    NOTHING to `emit`.** Wiring `emit` is byte-transparent to the
+    conversation stream until a real failover occurs.
+  - `hooks.metrics` (new) receives per-call telemetry — `route_usage`
+    on every successful call, plus the optional `failover_summary`
+    rollup at teardown. Routed to a separate hook so per-call
+    telemetry never lands on the conversation stream.
+  - Both hooks are optional with no-op defaults. Constructing
+    `failoverProvider([t1])` with no third argument is valid.
+- Public `MetricsFn` type added to the surface alongside `EmitFn`. The
+  two are structurally identical; the type alias is the contract.
+
+### Fixed
+
+- **Chain-exhaustion now returns `retryable: false`.** When every
+  target in the chain has been exhausted, the composite returns a
+  `{kind:'error', retryable:false, ..., cause:<underlying>}` wrapper
+  carrying the original failure in `cause`. Previously the underlying
+  error was returned verbatim — often `retryable:true` — which would
+  cause the kernel's turn-loop to re-enter the composite at
+  `targets[0]` and re-run the whole chain. That retry amplification
+  under a multi-provider outage is gone. **Hosts must not layer their
+  own retry on top of the composite** — the composite owns the entire
+  failover / retry / backoff strategy; chain-level retry-with-backoff,
+  if ever wanted, is a composite policy option, not emergent
+  double-retry.
+
 ## [0.1.1] — 2026-06-23
 
 ### Changed

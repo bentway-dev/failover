@@ -1,15 +1,17 @@
 // Golden (e): when every target in the chain fails with failover-class
-// errors, the composite returns the FINAL target's terminal error
-// unchanged — letting the loop's standard error path render it. Exactly
-// one failover_decision fires (T1→T2); no further decisions after the
-// last target is reached.
+// errors, the composite returns a TERMINAL `retryable:false` wrapper
+// carrying the underlying error in `cause`. The kernel's turn-loop reads
+// `retryable:false` and stops — it must NOT re-enter the composite at
+// targets[0] and re-run the whole chain (retry amplification under a
+// multi-provider outage). Exactly one failover_decision fires (T1→T2);
+// no route_usage on either channel because no successful call landed.
 
 import { describe, it, expect } from 'vitest';
 import { failoverProvider } from '../src/index.mjs';
 import { makeMockTarget, makeRecorder, makeFakeClock, userTranscript, err } from './_harness.mjs';
 
 describe('chain exhausted: every target fails', () => {
-  it('returns the terminal neutral error from the last target and emits exactly one failover_decision', async () => {
+  it('returns a retryable:false wrapper carrying the underlying error in cause', async () => {
     const t1 = makeMockTarget({
       name: 'anthropic-opus',
       provider: 'anthropic',
@@ -23,19 +25,27 @@ describe('chain exhausted: every target fails', () => {
       results: [err({ status: 503, retryable: true, message: 'unavailable-2' })],
     });
     const rec = makeRecorder();
-    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, ...makeFakeClock() });
+    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, metrics: rec.metrics, ...makeFakeClock() });
 
     const req = composite.serializeRequest({ shadowTranscript: userTranscript(), input: undefined });
     const result = await composite.complete(req);
 
     expect(result.kind).toBe('error');
+    expect(result.retryable).toBe(false);
     expect(result.status).toBe(503);
-    expect(result.message).toBe('unavailable-2');
+    expect(result.message).toContain('chain exhausted');
+    expect(result.message).toContain('unavailable-2');
+
+    expect(result.cause).toBeDefined();
+    expect(result.cause.kind).toBe('error');
+    expect(result.cause.status).toBe(503);
+    expect(result.cause.retryable).toBe(true);
+    expect(result.cause.message).toBe('unavailable-2');
 
     expect(t1.calls.complete).toHaveLength(1);
     expect(t2.calls.complete).toHaveLength(1);
 
-    expect(rec.customEventsBySubtype('failover_decision')).toHaveLength(1);
-    expect(rec.customEventsBySubtype('route_usage')).toHaveLength(0);
+    expect(rec.emitOf('failover_decision')).toHaveLength(1);
+    expect(rec.metricsOf('route_usage')).toHaveLength(0);
   });
 });

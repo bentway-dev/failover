@@ -5,13 +5,38 @@
 // The mechanism, in one paragraph: `serializeRequest` stashes its raw
 // inputs and builds the request for the current target. `complete` runs
 // the call. On success it accumulates per-target usage and emits a
-// `route_usage` event. On a routed error it consults the policy, picks
-// the next viable target, re-serializes the stashed transcript for that
-// target, and re-calls `complete` internally — repeating until success,
-// fail-fast, or chain exhaustion. The kernel sees ONE logical call per
-// turn; transcript portability is automatic because every internal
-// re-call re-serializes the full neutral transcript via the new
-// target's adapter.
+// `route_usage` event to the metrics channel. On a routed error it
+// consults the policy, picks the next viable target, re-serializes the
+// stashed transcript for that target, emits a `failover_decision` to
+// the stream-events channel, and re-calls `complete` internally —
+// repeating until success, fail-fast, or chain exhaustion. The kernel
+// sees ONE logical call per turn; transcript portability is automatic
+// because every internal re-call re-serializes the full neutral
+// transcript via the new target's adapter.
+//
+// Two-channel event model. The composite has two separate observation
+// surfaces, both optional with no-op defaults:
+//   - `emit`    — the stream sink. Receives ONLY decision events
+//                 (`failover_decision`, `failover_degradation`). Both
+//                 only fire when something actually happens (a failover
+//                 or a cross-provider trim). The happy path — first
+//                 target succeeds, no degradation — sends NOTHING to
+//                 `emit`. Wiring `emit` is byte-transparent to the
+//                 stream until a real failover occurs.
+//   - `metrics` — telemetry. Receives the per-call `route_usage` event
+//                 on every successful call, plus the optional
+//                 `failover_summary` rollup at teardown. Routed to a
+//                 separate hook so per-call telemetry never lands on
+//                 the conversation stream.
+//
+// Chain-level retry contract. The composite owns the entire failover /
+// retry / backoff strategy for routed errors. On chain exhaustion it
+// returns a `retryable:false` terminal error wrapping the underlying
+// failure in `cause`. The host loop MUST NOT layer its own retry on top
+// of this — doing so would re-enter the composite at `targets[0]` and
+// re-run the whole chain (retry amplification under a multi-provider
+// outage). Per-target transient errors are handled internally and
+// never surface; only the final terminal result reaches the host.
 //
 // `computeTotalCostUsd` ignores the kernel's per-session model arg and
 // sums each target's own cost fn against its own accumulated usage —
@@ -20,10 +45,10 @@
 import { accumulateUsage } from '@bentway/core/usage';
 import { trimForTarget } from './trim.mjs';
 import {
-  defaultClassify,
   resolveAction,
   computeBackoffMs,
   pickNextTarget,
+  defaultClassify,
 } from './policy.mjs';
 import {
   failoverDecision,
@@ -36,6 +61,7 @@ import {
 /** @typedef {import('./types.mjs').NeutralError} NeutralError */
 /** @typedef {import('./types.mjs').Usage} Usage */
 /** @typedef {import('./types.mjs').EmitFn} EmitFn */
+/** @typedef {import('./types.mjs').MetricsFn} MetricsFn */
 /** @typedef {import('./target.mjs').Target} Target */
 
 /** @typedef {'failover' | 'retry-same' | 'fail-fast'} Action */
@@ -50,10 +76,12 @@ import {
  * }} CallState
  */
 
+const noop = () => {};
+
 /**
  * @param {Target[]} targets
  * @param {((error: NeutralError, target: Target, history: object[]) => (Action | null | undefined)) | undefined} policy
- * @param {{ emit: EmitFn, now?: () => number, sleep?: (ms: number) => Promise<void> }} hooks
+ * @param {{ emit?: EmitFn, metrics?: MetricsFn, now?: () => number, sleep?: (ms: number) => Promise<void> }} [hooks]
  * @returns {{
  *   serializeRequest: (args: { shadowTranscript: object, input: unknown, previousResponseId?: string }) => object,
  *   complete: (req: object) => Promise<PortResult | NeutralError>,
@@ -61,7 +89,7 @@ import {
  *   summary: () => void,
  * }}
  */
-export function failoverProvider(targets, policy, hooks) {
+export function failoverProvider(targets, policy, hooks = {}) {
   if (!Array.isArray(targets) || targets.length === 0) {
     throw new TypeError('failoverProvider: `targets` must be a non-empty array');
   }
@@ -75,11 +103,9 @@ export function failoverProvider(targets, policy, hooks) {
     }
     seen.add(t.name);
   }
-  if (!hooks || typeof hooks.emit !== 'function') {
-    throw new TypeError('failoverProvider: `hooks.emit` must be the same sink the host wires into the loop');
-  }
 
-  const emit = hooks.emit;
+  const emit = typeof hooks.emit === 'function' ? hooks.emit : noop;
+  const metrics = typeof hooks.metrics === 'function' ? hooks.metrics : noop;
   const now = typeof hooks.now === 'function' ? hooks.now : Date.now;
   const sleep = typeof hooks.sleep === 'function'
     ? hooks.sleep
@@ -116,7 +142,7 @@ export function failoverProvider(targets, policy, hooks) {
     entry.totalLatencyMs += durationMs;
     const turnCost = target.computeCostUsd(target.model, turnUsage);
     entry.costUsd += Number.isFinite(turnCost) ? turnCost : 0;
-    emit(routeUsage({
+    metrics(routeUsage({
       target: target.name,
       model: target.model,
       usage: turnUsage,
@@ -131,6 +157,18 @@ export function failoverProvider(targets, policy, hooks) {
     if (err && typeof err.stage === 'string') parts.push(`stage:${err.stage}`);
     if (err && err.retryable === false) parts.push('non-retryable');
     return parts.join(',') || 'unknown';
+  }
+
+  function chainExhaustedError(underlying) {
+    return {
+      kind: 'error',
+      stage: underlying.stage,
+      retryable: false,
+      ...(underlying.status !== undefined ? { status: underlying.status } : {}),
+      message: `failover chain exhausted: ${underlying.message}`,
+      stopReason: underlying.stopReason,
+      cause: underlying,
+    };
   }
 
   return {
@@ -184,7 +222,7 @@ export function failoverProvider(targets, policy, hooks) {
         const next = pickNextTarget(targets, active.history);
         if (!next) {
           active = null;
-          return result;
+          return chainExhaustedError(result);
         }
 
         failoverCount += 1;
@@ -200,6 +238,12 @@ export function failoverProvider(targets, policy, hooks) {
       }
     },
 
+    // The kernel ctx calls this with `(model, totalUsage)` once at session
+    // end. Both args are intentionally ignored: the cross-target ledger
+    // sum is the only cost number that means anything under mixed-target
+    // sessions. The kernel-side evolution to a zero-arg form is a later,
+    // separate consideration — keep the current signature for ctx-shape
+    // compatibility.
     computeTotalCostUsd(_model, _usage) {
       let total = 0;
       for (const t of targets) {
@@ -224,7 +268,7 @@ export function failoverProvider(targets, policy, hooks) {
         };
       });
       const total_cost_usd = per_target.reduce((acc, p) => acc + p.cost_usd, 0);
-      emit(failoverSummary({ per_target, total_cost_usd, failover_count: failoverCount }));
+      metrics(failoverSummary({ per_target, total_cost_usd, failover_count: failoverCount }));
     },
   };
 }
