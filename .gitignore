@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# api-extractor scratch (the source-of-truth lives under etc/)
+temp/
+
+# Local hygiene supplement — the org-specific token list the public
+# gate file cannot itself reference. See .hygiene-local.example.mjs.
+.hygiene-local.mjs
