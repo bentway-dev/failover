@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # npm devDependencies — production runtime deps are kept zero; if any
+  # are added later they're picked up by the same ecosystem.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions — Dependabot updates the SHA pin and the trailing
+  # version comment together (e.g. `actions/checkout@<new-sha> # v6`),
+  # preserving the pin while keeping the human-readable version visible
+  # in code review.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

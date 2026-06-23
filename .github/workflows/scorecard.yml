@@ -1,0 +1,39 @@
+name: Scorecard
+
+# OpenSSF Scorecard — periodic supply-chain health check. Publishes a
+# SARIF report consumed by the Scorecard badge and (when the repo opts
+# in) the public scorecard.dev dashboard.
+
+on:
+  # Weekly cadence + on push to main so the badge reflects recent
+  # tightening promptly.
+  schedule:
+    - cron: '17 4 * * 1'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to upload the SARIF results to GitHub's code-scanning UI.
+      security-events: write
+      # Needed for the Scorecard action to publish results to the
+      # OpenSSF public dashboard (cryptographic attestation).
+      id-token: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde # v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,56 @@
+{
+  "name": "@bentway/failover",
+  "version": "0.0.0",
+  "description": "Runtime-agnostic failover library for bentway: transcript-portable mid-loop failover across Anthropic, OpenAI, and llama.cpp",
+  "keywords": [
+    "bentway",
+    "llm",
+    "agent",
+    "failover",
+    "routing"
+  ],
+  "homepage": "https://github.com/bentway-dev/failover#readme",
+  "bugs": { "url": "https://github.com/bentway-dev/failover/issues" },
+  "license": "Apache-2.0",
+  "author": "Nathan Sentjens <nate@bentway.dev>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bentway-dev/failover.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "files": ["src", "dist"],
+  "engines": { "node": ">=22" },
+  "packageManager": "pnpm@11.5.1",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bash scripts/check-file-sizes.sh && bash scripts/check-api-report.sh && node scripts/check-comment-hygiene.mjs",
+    "lint:pkg": "publint && attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@bentway/anthropic": "^0.3.0",
+    "@bentway/core": "^0.3.0",
+    "@bentway/llama": "^0.3.0",
+    "@bentway/openai": "^0.3.0",
+    "@bentway/stream-json": "^0.3.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.0",
+    "@microsoft/api-extractor": "^7.58.9",
+    "@types/node": "^22.0.0",
+    "publint": "^0.3.0",
+    "typescript": "^5.7.0"
+  }
+}
