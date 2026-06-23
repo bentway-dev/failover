@@ -1,0 +1,6 @@
+minimumReleaseAgeExclude:
+  - '@bentway/anthropic@0.3.0'
+  - '@bentway/core@0.3.0'
+  - '@bentway/llama@0.3.0'
+  - '@bentway/openai@0.3.0'
+  - '@bentway/stream-json@0.3.0'

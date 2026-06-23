@@ -1,0 +1,60 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write          # for gh release create
+  id-token: write          # enables npm OIDC trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          # NOTE: deliberately NO registry-url. setup-node's registry-url option
+          # injects an `${NODE_AUTH_TOKEN}` line into a generated .npmrc, and
+          # an empty NODE_AUTH_TOKEN DEFEATS OIDC trusted publishing. Tokenless
+          # publishing needs no token configured at all.
+          # v5 turns on auto-caching when package.json has `packageManager`,
+          # but pnpm isn't on PATH yet (corepack runs below) → cache step
+          # fails. Disable to match v4's behavior; revisit when restructuring
+          # the workflow to install pnpm before setup-node.
+          package-manager-cache: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.5.1 --activate
+      # OIDC trusted publishing needs npm >= 11.5.1; node:22 ships npm 10.x.
+      - run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Pack + publish
+        run: |
+          mkdir -p /tmp/pkg-out
+          pnpm pack --pack-destination /tmp/pkg-out
+          npm publish /tmp/pkg-out/*.tgz --access public
+      # Last step: a failed publish aborts before a release is created.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Extract the section for the tagged version from CHANGELOG.md.
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { f=1; next }
+            f && /^## \[/ { exit }
+            f { print }
+          ' CHANGELOG.md > /tmp/relnotes.md
+          if [ ! -s /tmp/relnotes.md ]; then
+            echo "no CHANGELOG section for $VERSION — falling back to auto-generated notes" >&2
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes-file /tmp/relnotes.md
+          fi
