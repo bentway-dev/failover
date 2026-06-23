@@ -31,7 +31,7 @@ describe('cost correctness across a mixed-target session', () => {
       costPerInputToken: 0.0025,
     });
     const rec = makeRecorder();
-    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, ...makeFakeClock() });
+    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, metrics: rec.metrics, ...makeFakeClock() });
 
     const req1 = composite.serializeRequest({ shadowTranscript: userTranscript('q1'), input: undefined });
     const r1 = await composite.complete(req1);
@@ -48,7 +48,7 @@ describe('cost correctness across a mixed-target session', () => {
     const total = composite.computeTotalCostUsd('claude-opus-4-8', { input_tokens: 3000, output_tokens: 150 });
     expect(total).toBeCloseTo(expectedTotal, 10);
 
-    const routes = rec.customEventsBySubtype('route_usage');
+    const routes = rec.metricsOf('route_usage');
     expect(routes).toHaveLength(2);
     expect(routes[0]).toMatchObject({ target: 'anthropic-opus', cost_usd: expectedT1Cost });
     expect(routes[1]).toMatchObject({ target: 'openai-gpt5',  cost_usd: expectedT2Cost });

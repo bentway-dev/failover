@@ -24,7 +24,7 @@ describe('529 failover: anthropic → openai (stateless)', () => {
     });
     const rec = makeRecorder();
     const clock = makeFakeClock();
-    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, ...clock });
+    const composite = failoverProvider([t1.target, t2.target], undefined, { emit: rec.emit, metrics: rec.metrics, ...clock });
 
     const transcript = userTranscript('explain HRV');
     const req = composite.serializeRequest({ shadowTranscript: transcript, input: undefined });
@@ -40,7 +40,7 @@ describe('529 failover: anthropic → openai (stateless)', () => {
     expect(result.kind).toBeUndefined();
     expect(result.text).toBe('served by openai');
 
-    const decisions = rec.customEventsBySubtype('failover_decision');
+    const decisions = rec.emitOf('failover_decision');
     expect(decisions).toHaveLength(1);
     expect(decisions[0]).toMatchObject({
       subtype: 'failover_decision',
@@ -50,7 +50,7 @@ describe('529 failover: anthropic → openai (stateless)', () => {
       attempt: 2,
     });
 
-    const routes = rec.customEventsBySubtype('route_usage');
+    const routes = rec.metricsOf('route_usage');
     expect(routes).toHaveLength(1);
     expect(routes[0].target).toBe('openai-gpt5');
   });

@@ -43,7 +43,7 @@ describe('reasoning-trim degradation: anthropic-reasoning → openai', () => {
     expect(blockTypes).not.toContain('reasoning');
     expect(t2Transcript).not.toBe(transcript);
 
-    const degradations = rec.customEventsBySubtype('failover_degradation');
+    const degradations = rec.emitOf('failover_degradation');
     expect(degradations).toHaveLength(1);
     expect(degradations[0]).toMatchObject({
       subtype: 'failover_degradation',

@@ -51,15 +51,25 @@ export function makeMockTarget({
   return { target, calls };
 }
 
-/** Recording emit sink + the events it captured. */
+/** Recording sinks for the two channels the composite distinguishes:
+ *  `emit` (decision events) and `metrics` (per-call telemetry). The
+ *  helpers `emitOf` / `metricsOf` flatten the `customEvent` `.fields`
+ *  envelope for ergonomic matching with `toMatchObject`. */
 export function makeRecorder() {
-  const events = [];
-  const emit = (e) => { events.push(e); };
-  const customEventsBySubtype = (subtype) =>
-    events
+  const emitEvents = [];
+  const metricsEvents = [];
+  const flatten = (arr, subtype) =>
+    arr
       .filter((e) => e.tag === 'customEvent' && e.subtype === subtype)
       .map((e) => ({ tag: e.tag, subtype: e.subtype, ...(e.fields || {}) }));
-  return { emit, events, customEventsBySubtype };
+  return {
+    emit: (e) => { emitEvents.push(e); },
+    metrics: (e) => { metricsEvents.push(e); },
+    emitEvents,
+    metricsEvents,
+    emitOf: (subtype) => flatten(emitEvents, subtype),
+    metricsOf: (subtype) => flatten(metricsEvents, subtype),
+  };
 }
 
 /** Deterministic clock that advances on demand. */

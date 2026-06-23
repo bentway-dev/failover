@@ -1,6 +1,6 @@
 {
   "name": "@bentway/failover",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Runtime-agnostic failover library for bentway: transcript-portable mid-loop failover across Anthropic, OpenAI, and llama.cpp",
   "keywords": [
     "bentway",
