@@ -1,15 +1,34 @@
-// Runtime-agnostic failover library for bentway. Composite provider
-// over the published `@bentway/*` adapters that fails over mid-
-// conversation by re-serializing the neutral transcript per target.
+// Public surface of @bentway/failover.
 //
-// This is the pre-release skeleton. The composite provider and target
-// constructor land in 0.1.0; until then, this module exports only the
-// version string so api-extractor has a stable baseline.
+// Two factories — `createTarget` for the per-provider unit and
+// `failoverProvider` for the composite that satisfies the kernel's
+// {serializeRequest, complete, computeTotalCostUsd} ctx contract — plus
+// the default failure-class classifier so a caller can layer a custom
+// policy on top without re-deriving the defaults.
+
+export { createTarget } from './target.mjs';
+export { failoverProvider, defaultClassify } from './failover.mjs';
 
 /**
- * Library version. The failover surface (`failoverProvider`, `target`)
- * lands in 0.1.0; this constant is the only export until then.
+ * The composite chain unit. Frozen at construction.
+ * @typedef {import('./target.mjs').Target} Target
  *
- * @type {string}
+ * @typedef {import('./target.mjs').TargetCapabilities} TargetCapabilities
+ *
+ * The action a policy resolves to for a given neutral error.
+ * @typedef {'failover' | 'retry-same' | 'fail-fast'} Action
+ *
+ * @typedef {import('./types.mjs').PortResult} PortResult
+ * @typedef {import('./types.mjs').NeutralError} NeutralError
+ * @typedef {import('./types.mjs').Usage} Usage
+ * @typedef {import('./types.mjs').Transcript} Transcript
+ * @typedef {import('./types.mjs').Message} Message
+ * @typedef {import('./types.mjs').Block} Block
+ * @typedef {import('./types.mjs').SerializeRequestFn} SerializeRequestFn
+ * @typedef {import('./types.mjs').CompleteFn} CompleteFn
+ * @typedef {import('./types.mjs').ComputeCostUsdFn} ComputeCostUsdFn
+ * @typedef {import('./types.mjs').EmitFn} EmitFn
+ * @typedef {import('./types.mjs').CompletionRequest} CompletionRequest
  */
-export const VERSION = '0.0.0-dev';
+
+export {};

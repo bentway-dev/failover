@@ -5,7 +5,77 @@
 ```ts
 
 // @public
-export const VERSION: string;
+export type Action = "failover" | "retry-same" | "fail-fast";
+
+// @public
+export type Block = Block_2;
+
+// @public
+export type CompleteFn = CompleteFn_3;
+
+// @public
+export type CompletionRequest = CompletionRequest_2;
+
+// @public
+export type ComputeCostUsdFn = ComputeCostUsdFn_3;
+
+// @public (undocumented)
+export function createTarget(args: {
+    name: string;
+    provider: "anthropic" | "openai" | "llama";
+    model: string;
+    serializeRequest: SerializeRequestFn_2;
+    complete: CompleteFn_2;
+    computeCostUsd: ComputeCostUsdFn_2;
+    capabilities?: TargetCapabilities_2;
+    openaiStateless?: boolean;
+}): Target_2;
+
+// @public
+export function defaultClassify(error: NeutralError_4): Action_3;
+
+// @public
+export type EmitFn = EmitFn_2;
+
+// @public (undocumented)
+export function failoverProvider(targets: Target_3[], policy: ((error: NeutralError_3, target: Target_3, history: object[]) => (Action_2 | null | undefined)) | undefined, hooks: {
+    emit: EmitFn_3;
+    now?: () => number;
+    sleep?: (ms: number) => Promise<void>;
+}): {
+    serializeRequest: (args: {
+        shadowTranscript: object;
+        input: unknown;
+        previousResponseId?: string;
+    }) => object;
+    complete: (req: object) => Promise<PortResult_3 | NeutralError_3>;
+    computeTotalCostUsd: (model: string, usage: Usage_3) => number;
+    summary: () => void;
+};
+
+// @public
+export type Message = Message_2;
+
+// @public
+export type NeutralError = NeutralError_2;
+
+// @public
+export type PortResult = PortResult_2;
+
+// @public
+export type SerializeRequestFn = SerializeRequestFn_3;
+
+// @public
+export type Target = Target_2;
+
+// @public
+export type TargetCapabilities = TargetCapabilities_2;
+
+// @public
+export type Transcript = Transcript_2;
+
+// @public
+export type Usage = Usage_2;
 
 // (No @packageDocumentation comment for this package)
 

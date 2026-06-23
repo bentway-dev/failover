@@ -10,7 +10,9 @@
     "routing"
   ],
   "homepage": "https://github.com/bentway-dev/failover#readme",
-  "bugs": { "url": "https://github.com/bentway-dev/failover/issues" },
+  "bugs": {
+    "url": "https://github.com/bentway-dev/failover/issues"
+  },
   "license": "Apache-2.0",
   "author": "Nathan Sentjens <nate@bentway.dev>",
   "repository": {
@@ -24,8 +26,13 @@
       "default": "./src/index.mjs"
     }
   },
-  "files": ["src", "dist"],
-  "engines": { "node": ">=22" },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "packageManager": "pnpm@11.5.1",
   "sideEffects": false,
   "publishConfig": {
@@ -36,7 +43,7 @@
     "build": "tsc",
     "prepare": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "bash scripts/check-file-sizes.sh && bash scripts/check-api-report.sh && node scripts/check-comment-hygiene.mjs",
+    "test": "bash scripts/check-file-sizes.sh && bash scripts/check-api-report.sh && node scripts/check-comment-hygiene.mjs && vitest run",
     "lint:pkg": "publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
@@ -51,6 +58,7 @@
     "@microsoft/api-extractor": "^7.58.9",
     "@types/node": "^22.0.0",
     "publint": "^0.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.9"
   }
 }
