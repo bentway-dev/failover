@@ -5,14 +5,28 @@
 // The mechanism, in one paragraph: `serializeRequest` stashes its raw
 // inputs and builds the request for the current target. `complete` runs
 // the call. On success it accumulates per-target usage and emits a
-// `route_usage` event to the metrics channel. On a routed error it
-// consults the policy, picks the next viable target, re-serializes the
-// stashed transcript for that target, emits a `failover_decision` to
-// the stream-events channel, and re-calls `complete` internally —
-// repeating until success, fail-fast, or chain exhaustion. The kernel
-// sees ONE logical call per turn; transcript portability is automatic
-// because every internal re-call re-serializes the full neutral
-// transcript via the new target's adapter.
+// `route_usage` event to the metrics channel. On a routed error — OR a
+// THROW from the underlying adapter — it consults the policy, picks the
+// next viable target, re-serializes the stashed transcript for that
+// target, emits a `failover_decision` to the stream-events channel, and
+// re-calls `complete` internally — repeating until success, fail-fast,
+// or chain exhaustion. The kernel sees ONE logical call per turn;
+// transcript portability is automatic because every internal re-call
+// re-serializes the full neutral transcript via the new target's
+// adapter.
+//
+// Throw normalization. An adapter that throws (rather than returning a
+// `{kind:'error'}` neutral shape) used to bypass failover entirely — the
+// exception would unwind through the kernel. Real adapters throw exactly
+// at the boundaries that need failover most (a non-ok HTTP response in
+// the Anthropic port surfaced this in the pilot). The composite now
+// catches every thrown value, normalizes it to a retryable transport
+// error with the original preserved in `cause`, and lets it flow through
+// the same failure-class map. Conservative by design: every throw → one
+// retryable failover attempt. Transient throws (network) fail over and
+// succeed; systematic bugs (every target throws) exhaust the chain and
+// surface as `retryable:false` with the cause chain intact — the same
+// terminal shape 0.2.0 introduced for returned-error exhaustion.
 //
 // Two-channel event model. The composite has two separate observation
 // surfaces, both optional with no-op defaults:
@@ -38,9 +52,12 @@
 // outage). Per-target transient errors are handled internally and
 // never surface; only the final terminal result reaches the host.
 //
-// `computeTotalCostUsd` ignores the kernel's per-session model arg and
-// sums each target's own cost fn against its own accumulated usage —
-// the only cost number that means anything under mixed-target sessions.
+// Cost derivation. The per-target ledger accumulates USAGE (integer
+// tokens, no float drift), not running cost. `computeTotalCostUsd` and
+// `summary` compute cost once per target from the accumulated usage,
+// then sum across targets. A single-target chain therefore yields
+// byte-identical cost to a baseline that runs that target alone — the
+// transparency property an adopter's stream-equivalence gate depends on.
 
 import { accumulateUsage } from '@bentway/core/usage';
 import { trimForTarget } from './trim.mjs';
@@ -79,6 +96,24 @@ import {
 const noop = () => {};
 
 /**
+ * Normalize a thrown value from an adapter's `complete` into the
+ * neutral error shape so the existing failure-class map can route it.
+ * Conservative: every throw → `transport`/`retryable:true`. The
+ * original throwable is preserved in `cause` so a systematic adapter
+ * bug (which will exhaust the chain) surfaces with diagnosable detail
+ * intact, while a transient throw merely fails over.
+ */
+function normalizeThrow(thrown) {
+  return {
+    kind: 'error',
+    stage: 'transport',
+    retryable: true,
+    message: (thrown && thrown.message) ? thrown.message : String(thrown),
+    cause: thrown,
+  };
+}
+
+/**
  * @param {Target[]} targets
  * @param {((error: NeutralError, target: Target, history: object[]) => (Action | null | undefined)) | undefined} policy
  * @param {{ emit?: EmitFn, metrics?: MetricsFn, now?: () => number, sleep?: (ms: number) => Promise<void> }} [hooks]
@@ -111,10 +146,10 @@ export function failoverProvider(targets, policy, hooks = {}) {
     ? hooks.sleep
     : (ms) => new Promise((r) => setTimeout(r, ms));
 
-  /** @type {Map<string, { usage: Usage, callCount: number, totalLatencyMs: number, costUsd: number }>} */
+  /** @type {Map<string, { usage: Usage, callCount: number, totalLatencyMs: number }>} */
   const ledger = new Map();
   for (const t of targets) {
-    ledger.set(t.name, { usage: {}, callCount: 0, totalLatencyMs: 0, costUsd: 0 });
+    ledger.set(t.name, { usage: {}, callCount: 0, totalLatencyMs: 0 });
   }
   let failoverCount = 0;
 
@@ -140,8 +175,11 @@ export function failoverProvider(targets, policy, hooks = {}) {
     entry.usage = accumulateUsage(entry.usage, turnUsage);
     entry.callCount += 1;
     entry.totalLatencyMs += durationMs;
+    // Per-call cost is one float multiplication on the turn's own
+    // usage — emitted on the route_usage event for granular dashboards.
+    // The session total is NOT derived by summing these floats (drift);
+    // see computeTotalCostUsd which recomputes from accumulated usage.
     const turnCost = target.computeCostUsd(target.model, turnUsage);
-    entry.costUsd += Number.isFinite(turnCost) ? turnCost : 0;
     metrics(routeUsage({
       target: target.name,
       model: target.model,
@@ -171,6 +209,13 @@ export function failoverProvider(targets, policy, hooks = {}) {
     };
   }
 
+  function costForTarget(t) {
+    const entry = ledger.get(t.name);
+    if (!entry || entry.callCount === 0) return 0;
+    const c = t.computeCostUsd(t.model, entry.usage);
+    return Number.isFinite(c) ? c : 0;
+  }
+
   return {
     serializeRequest({ shadowTranscript, input, previousResponseId }) {
       const first = targets[0];
@@ -192,7 +237,12 @@ export function failoverProvider(targets, policy, hooks = {}) {
       while (true) {
         const t = active.target;
         active.lastCallStart = now();
-        const result = await t.complete(currentReq);
+        let result;
+        try {
+          result = await t.complete(currentReq);
+        } catch (thrown) {
+          result = normalizeThrow(thrown);
+        }
         const durationMs = now() - active.lastCallStart;
 
         if (!result || result.kind !== 'error') {
@@ -239,18 +289,17 @@ export function failoverProvider(targets, policy, hooks = {}) {
     },
 
     // The kernel ctx calls this with `(model, totalUsage)` once at session
-    // end. Both args are intentionally ignored: the cross-target ledger
-    // sum is the only cost number that means anything under mixed-target
-    // sessions. The kernel-side evolution to a zero-arg form is a later,
-    // separate consideration — keep the current signature for ctx-shape
-    // compatibility.
+    // end. Both args are intentionally ignored: the per-target ledger
+    // holds USAGE (integer tokens) and the answer is each target's own
+    // cost fn applied once to its accumulated usage, then summed across
+    // targets. Two floats for a 2-target session — not N-per-turn — so
+    // the sum is deterministic, and a single-target chain matches the
+    // baseline byte-for-byte. The kernel-side evolution to a zero-arg
+    // form is a later, separate consideration; keep the current
+    // signature for ctx-shape compatibility.
     computeTotalCostUsd(_model, _usage) {
       let total = 0;
-      for (const t of targets) {
-        const entry = ledger.get(t.name);
-        if (!entry) continue;
-        total += entry.costUsd;
-      }
+      for (const t of targets) total += costForTarget(t);
       return total;
     },
 
@@ -263,7 +312,7 @@ export function failoverProvider(targets, policy, hooks = {}) {
           model: t.model,
           calls: entry?.callCount ?? 0,
           usage: entry?.usage ?? {},
-          cost_usd: entry?.costUsd ?? 0,
+          cost_usd: costForTarget(t),
           total_latency_ms: entry?.totalLatencyMs ?? 0,
         };
       });

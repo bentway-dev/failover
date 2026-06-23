@@ -2,6 +2,31 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-06-23
+
+Two fixes surfaced by the first downstream pilot. Both small. No
+public-API change; existing call sites need no edits.
+
+### Fixed
+
+- **A target whose `complete` THROWS now triggers failover** instead of
+  bypassing the chain. Real adapters throw exactly at the boundaries
+  that need failover most — a non-ok HTTP response in the Anthropic
+  port surfaced this in the pilot. The composite now catches every
+  thrown value, normalizes it to a retryable transport error with the
+  original preserved in `cause`, and routes it through the same
+  failure-class map. Transient throws (network) fail over and succeed;
+  systematic bugs (every target throws) exhaust the chain and surface
+  as `retryable:false` with the cause chain intact.
+- **`computeTotalCostUsd` is now drift-free.** The per-target ledger
+  accumulates usage (integer tokens), not running cost; the session
+  total recomputes cost once per target from accumulated usage, then
+  sums across targets. A single-target chain matches the baseline
+  byte-for-byte — no `toBeCloseTo` tolerance needed. The per-call
+  `route_usage` event still carries the turn's own cost for granular
+  dashboards (one float multiplication per call — no accumulation, no
+  drift).
+
 ## [0.2.0] — 2026-06-23
 
 Consumer-driven refinement surfaced by the first downstream adoption
