@@ -47,11 +47,11 @@
     "lint:pkg": "publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
-    "@bentway/anthropic": "^0.3.0",
-    "@bentway/core": "^0.3.0",
-    "@bentway/llama": "^0.3.0",
-    "@bentway/openai": "^0.3.0",
-    "@bentway/stream-json": "^0.3.0"
+    "@bentway/anthropic": "^0.5.1",
+    "@bentway/core": "^0.5.1",
+    "@bentway/llama": "^0.5.1",
+    "@bentway/openai": "^0.5.1",
+    "@bentway/stream-json": "^0.5.1"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.0",
